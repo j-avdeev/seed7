@@ -1,0 +1,96 @@
+# Builds Spooky Merge from source, tests it, and publishes it to GitHub Pages.
+name: Spooky Merge Pages
+
+on:
+  push:
+    branches: [master, feature/spooky-merge]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: spooky-merge-pages
+  cancel-in-progress: true
+
+env:
+  EMSDK_VERSION: 6.0.13
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 18
+
+      - name: Cache the Emscripten SDK
+        id: emsdk-cache
+        uses: actions/cache@v6
+        with:
+          path: emsdk
+          key: emsdk-${{ env.EMSDK_VERSION }}-${{ runner.os }}
+
+      - name: Install the Emscripten SDK
+        if: steps.emsdk-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git
+          emsdk/emsdk install "$EMSDK_VERSION"
+          emsdk/emsdk activate "$EMSDK_VERSION"
+
+      - name: Build the Seed7 compiler for Emscripten
+        run: |
+          source emsdk/emsdk_env.sh
+          cd src
+          make -f mk_emccl.mak clean
+          make -f mk_emccl.mak depend
+          make -f mk_emccl.mak
+          make -f mk_emccl.mak s7c
+
+      - name: Compile and run the rules tests
+        run: |
+          source emsdk/emsdk_env.sh
+          node --stack-size=8192 bin/s7c.js -l "$PWD/lib" -b "$PWD/bin" -c emcc -O2 prg/spooky_merge_test.sd7
+          cd prg
+          node --stack-size=8192 spooky_merge_test.js | tee test_output.txt
+          grep -q "all checks passed" test_output.txt
+
+      - name: Compile the game
+        run: |
+          source emsdk/emsdk_env.sh
+          node --stack-size=8192 bin/s7c.js -l "$PWD/lib" -b "$PWD/bin" -c emcc -O2 prg/spooky_merge.sd7
+          cp prg/spooky_merge.js prg/spooky_merge.wasm prg/spooky_merge_web/
+
+      - name: Run the browser smoke test
+        working-directory: prg/spooky_merge_web
+        run: |
+          npm install --no-save playwright
+          npx playwright install --with-deps chromium
+          node smoke_test.cjs
+
+      - name: Collect the site
+        run: |
+          mkdir -p _site/art
+          cd prg/spooky_merge_web
+          cp index.html launcher.js style.css spooky_merge.js spooky_merge.wasm ../../_site/
+          cp art/*.png ../../_site/art/
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
