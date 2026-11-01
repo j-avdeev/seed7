@@ -71,6 +71,10 @@ Each tier and the background has an SVG source and a rendered PNG in `art/`. Aft
 
 To use other artwork, replace a PNG and keep its file name. Tier images are square with a transparent background, and the game scales them to the size of the tier. For the sharpest result use the sizes in `render.cjs`. The top 110 CSS pixels of `background.png` (220 image pixels) must stay the flat color `#0b0820`, because the score text paints its own background. If a PNG cannot be loaded, the game draws a simple shape instead.
 
+## Continuous integration
+
+`.github/workflows/spooky-merge-pages.yml` builds the Seed7 compiler and the game from source, runs the rules tests and the smoke test, and publishes the site to GitHub Pages only if they pass. It runs on pushes to `master` and `feature/spooky-merge`. Set the Pages source of the repository to GitHub Actions. The Playwright smoke test cannot detect throttled timers, so it does not replace a manual check in a real browser.
+
 ## Controls
 
 - Move with the mouse or A/D and arrow keys.
